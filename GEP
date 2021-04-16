@@ -1,0 +1,149 @@
+from gurobipy import *
+
+
+# In[3]:
+
+
+# create model
+m = Model("GEP")
+
+
+# In[4]:
+
+
+######## INPUT MODEL PARAMETERS ##############
+
+## Input generation cost by thermal, solar and wind， split thermal to coal and natural gas
+CG=[1,2,3,4]
+
+## Input investment cost by thermal, solar and wind
+CI=[1,2,6,4]
+
+## The number of hours coal, natual gas, solar and wind units are operating respectively in a single year 
+Nh=[8760,8760,4380,5694] 
+
+## Input annualized future projection of demand from year 2021-2030, expressed in unit of MW
+D=1000   # Replace the TESTING NUMBER
+
+## Input capacity factors for solar and wind, assume capacity factor for coal and natural gas is 1.
+Fs=0.3
+Fw=0.4  # we can play with these variables in sensitivity test
+
+## Set Target for Renewable Penetration in 10 years
+rp=0.4
+
+## Power expansion limit i.e. the maximum that can be built for thermal, solar and wind technologies
+PiMax=[400,200,300,400] # Replace the TESTING NUMBER
+
+
+# In[5]:
+
+
+##### Config Scenarios: Baseline / Public Health #######
+
+# Health care cost $/MWh ##
+CH=0 # CH=0 under baseline scenario
+CH=1 # CH>0 under public health scenario
+
+'''
+I do not distinguish CH for coal and natural gas type, instead, I use a universal CH value. You can distinguish CH values if you like. 
+Please remember to change obj function if you changes the CH setting here...
+'''
+
+
+# In[6]:
+
+
+# Create decision variables representing power generation & capacity expansions:  
+# technologies: coal, natural gas, wind and solar
+Pg_c = m.addVar(vtype=GRB.CONTINUOUS, name="Pg_c"); 
+Pg_n = m.addVar(vtype=GRB.CONTINUOUS, name="Pg_n"); 
+Pg_s = m.addVar(vtype=GRB.CONTINUOUS, name="Pg_s");
+Pg_w = m.addVar(vtype=GRB.CONTINUOUS, name="Pg_w");
+Pi_c = m.addVar(vtype=GRB.CONTINUOUS, name="Pi_c"); 
+Pi_n = m.addVar(vtype=GRB.CONTINUOUS, name="Pi_n"); 
+Pi_s = m.addVar(vtype=GRB.CONTINUOUS, name="Pi_s");
+Pi_w = m.addVar(vtype=GRB.CONTINUOUS, name="Pi_w");
+
+
+# In[7]:
+
+
+# Set objective
+
+m.setObjective(Nh[0]*Pg_c + Nh[1]*Pg_n + Nh[2]*Pg_s + Nh[3]*Pg_w + CI[0]*Pi_c + CI[1]*Pi_n + CI[2]*Pi_s + CI[3]*Pi_w + CH*(Nh[0]*Pg_c+ Nh[1]*Pg_n), GRB.MINIMIZE)
+
+
+# In[8]:
+
+
+# Add constraints:
+m.addConstr(Pg_c + Pg_n + Pg_s + Pg_w >= D, "c0")  # Power balance constraint
+
+m.addConstr(Pg_c <= Pi_c, "c1")    # power output lower and upper limits
+m.addConstr(Pg_n <= Pi_n, "c2")
+m.addConstr(Pg_s <= Pi_s, "c3")
+m.addConstr(Pg_w <= Pi_w, "c4")
+m.addConstr(Pg_c >= 0, "c5")
+m.addConstr(Pg_n >= 0, "c6")
+m.addConstr(Pg_s >= 0, "c7")
+m.addConstr(Pg_w >= 0, "c8")
+
+m.addConstr(Nh[0]*Pg_c + Nh[1]*Pg_n + Nh[2]*Pg_s + Nh[3]*Pg_w >= rp*D, "c9")  # renewable penetration target constraint 
+
+m.addConstr(Pi_c <= PiMax[0], "c10")  # limit of the maximum buildout for each generation technology
+m.addConstr(Pi_n <= PiMax[0], "c11")
+m.addConstr(Pi_s <= PiMax[1], "c12") 
+m.addConstr(Pi_w <= PiMax[2], "c13") 
+
+
+# In[9]:
+
+
+# Optimize
+m.optimize()
+
+
+# In[10]:
+
+
+# printout decision variable values
+m.getVars()
+for v in m.getVars(): print(v.varName, v.x)
+# printout objective values
+print('Obj: %g' % m.objVal)
+
+
+# ## Data Analytics
+
+# In[14]:
+
+
+import matplotlib.pyplot as plt
+# Pie chart of generation mix, where the slices will be ordered and plotted counter-clockwise:
+
+Pg_c_star=m.getVars()[0].x
+Pg_n_star=m.getVars()[1].x
+Pg_s_star=m.getVars()[2].x
+Pg_w_star=m.getVars()[3].x
+Pi_c_star=m.getVars()[4].x
+Pi_n_star=m.getVars()[5].x
+Pi_s_star=m.getVars()[6].x
+Pi_w_star=m.getVars()[7].x
+
+labels = 'Coal', 'Natural Gas', 'Solar', 'Wind'
+genMix = [Pg_c_star, Pg_n_star, Pg_s_star, Pg_w_star]
+expCap = [Pi_c_star, Pi_n_star, Pi_s_star, Pi_w_star]
+sizes = [25, 25, 25, 25] ## just using pseudo sizes matrix for pie chart demo, need to replace it with genMix
+explode = (0, 0, 0.1, 0)  # only "explode" the 2nd slice (i.e. 'Solar')
+
+fig1, (ax1,ax2) = plt.subplots(1,2)
+ax1.pie(genMix, explode=explode, labels=labels, autopct='%1.1f%%',
+        shadow=True, startangle=90)
+ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+ax1.set_title("Optimal Generation Mix \nin next 10 years")
+
+ax2.pie(expCap, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+ax2.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+ax2.set_title("Optimal Capacity Expansion \nin next 10 years")
+plt.show()
