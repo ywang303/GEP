@@ -1,149 +1,466 @@
-from gurobipy import *
+#!/usr/bin/env python
+# coding: utf-8
 
+# In[1]:
+
+
+from gurobipy import *
+import numpy as np
+# implement baseline sceanrio
+m1 = Model("Baseline") 
+
+
+# In[2]:
+
+
+######## INPUT MODEL PARAMETERS ##############
+num_years = 10
+
+## Input generation cost by coal, natural gas, solar and wind， split thermal to coal and natural gas
+FUELc  = 17  # $/MWh
+FUELng = 18  # $/MWh avg combined cycle 
+
+VOMc  = 4  # $/MWh
+VOMng = 1  # $/MWh
+VOMw  = 0  # $/MWh
+VOMs  = 0  # $/MWh
+
+CGc  = FUELc  + VOMc   # $/MWh
+CGng = FUELng + VOMng  # $/MWh
+CGw  = VOMw            # $/MWh
+CGs  = VOMs            # $/MWh
+
+CG = [CGc, CGng, CGs, CGw] # $/MWh
+
+### Input investment cost by coal, natural gas, solar and wind
+
+# CAPEX	= ConFinFActor * (OCC * CapRegMult + GCC)
+CAPEXc  = 500  # $/kW Coal-new-AvgCF
+#CAPEXc  = 4150  # $/kW Coal-new-HighCF
+CAPEXng = 900  # $/kW Gas CC AvgCF
+#CAPEXng = 1088  # $/kW Gas CC HighCF
+CAPEXs  = 1600 # $/kW LA
+CAPEXw  = 1926 # $/kW Class 7
+
+
+# Fixed Operating Expenses	FOM = input in $/kW
+FOMc  = 40 # $/kW - year
+FOMng = 13 # $/kW-year Gas-CC-AvgCF
+#FOMng = 13 # $/kW-year Gas-CC-HighCF
+FOMw  = 43 # $/kW - year
+FOMs  = 19 # $/kW - year
+
+CIc  = (CAPEXc  + num_years*FOMc)  * (1000)  # $/MW
+CIng = (CAPEXng + num_years*FOMng) * (1000)  # $/MW
+CIs  = (CAPEXs  + num_years*FOMs)  * (1000)  # $/MW
+CIw  = (CAPEXw  + num_years*FOMw)  * (1000)  # $/MW
+
+CI = [CIc, CIng, CIs, CIw] # $/MW
+
+## CRF by technology
+CRFc  = 0.052
+CRFng = 0.05
+CRFw  = 0.047
+CRFs  = 0.043 # real-mid
+
+## The number of hours coal, natual gas, solar and wind units are operating respectively in a single year 
+Nhc  =   4695  # Coal-new-AvgCF
+#Nhc  =  7446 # Coal-new-HighCF
+Nhng = 4818 # Gas-CC-AvgCF
+# Nhng = 7621 # Gas-CC-HighCF
+Nhw  = 3023 # Class 7 Wind
+Nhs  = 2793 # Utility PV - LA
+Nh = [Nhc, Nhng, Nhs, Nhw] # ATB table data 
+Nh = [8760,8760,5694,4380] 
+
+## Input annualized future projection of demand from year 2021-2030, expressed in unit of MW
+# “Adopted 2019 Integrated Energy Policy Report,” n.d., 412.
+D = 221300 # MW   CEDU 2018 mid - 2030 
+Dh = 2814588*1000 #MWh # 321300*8760
+#D_2020 = 280000 #GWh
+
+## Input capacity factors for solar and wind, assume capacity factor for coal and natural gas is 1.
+# https://drive.google.com/file/d/1LPtT65RnJX-_ZS1eFr5GIWIGAC2QI_cr/view?usp=sharing
+# https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=epmt_6_07_a 
+Fc  = 0.62
+#Fc = 0.85 # Coal-new-HighCF from ATB table
+Fng = 0.566
+#Fng = 0.87  # Gas-CC-HighCF from ATB table
+Fs  = 0.32  # LA from ATB table
+Fw  = 0.354 # assuming class 7
+PF=[Fc,Fng ,Fs,Fw]
+
+#we can play with these variables in sensitivity test
+
+## Set Target for Renewable Penetration in 10 years
+rp=0.2
+
+## Power expansion limit i.e. the maximum that can be built for thermal, solar and wind technologies
+PiMax_Potential=np.array([80000,122271,452556,97703]) # Replace the TESTING NUMBER
+
+### Currently you can see genB and gen are the same this is because we start from grey field (i.e. assume all generation capacity built=0)
+### Please put currenty (2021) generation capacity already built for coal, natural gas, solar, wind
+IniPi_c = 60000
+IniPi_ng = 60000    ## THIS IS FAKE
+IniPi_w = 20000
+IniPi_s = 20000
+Pi_0=np.array([IniPi_c,IniPi_ng,IniPi_w,IniPi_s])
+PiMax=PiMax_Potential-Pi_0
+
+PI_0=Pi_0.tolist()
+
+(sum(PiMax)+sum(PI_0))>D
+
+
+# ![image.png](attachment:image.png)
 
 # In[3]:
 
 
-# create model
-m = Model("GEP")
+##### Config Scenarios: Baseline / Public Health #######
+
+### Health care cost $/MWh i.e. CH_carbon CH_naturalgas
+# Machol, Ben, and Sarah Rizk. “Economic Value of U.S. Fossil Fuel Electricity Health Impacts.” Environment International 52 (February 1, 2013): 75–80. https://doi.org/10.1016/j.envint.2012.03.003.
+CH   = [0, 0] # CH=0 under baseline scenario
+
+# CHc  = 0.45 * (10^-3)# $/MWh
+# CHng = 0.02 * (10^-3) # $/MWh  these costs are too small compared to costs of renewables
+CHc  = 0.45*(1000)# $/MWh
+CHng = 0.02*(1000) # $/MWh  
+
+CH_ph = [CHc, CHng] # CH>0 under public health scenario
 
 
 # In[4]:
 
 
-######## INPUT MODEL PARAMETERS ##############
 
-## Input generation cost by thermal, solar and wind， split thermal to coal and natural gas
-CG=[1,2,3,4]
+# Create decision variables representing power generation & capacity expansions:  
+# technologies: coal, natural gas, wind and solar
+Pg_c = m1.addVar(vtype=GRB.CONTINUOUS, name="Pg_c"); 
+Pg_n = m1.addVar(vtype=GRB.CONTINUOUS, name="Pg_n"); 
+Pg_s = m1.addVar(vtype=GRB.CONTINUOUS, name="Pg_s");
+Pg_w = m1.addVar(vtype=GRB.CONTINUOUS, name="Pg_w");
+Pi_c = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_c"); 
+Pi_n = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_n"); 
+Pi_s = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_s");
+Pi_w = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_w");
 
-## Input investment cost by thermal, solar and wind
-CI=[1,2,6,4]
-
-## The number of hours coal, natual gas, solar and wind units are operating respectively in a single year 
-Nh=[8760,8760,4380,5694] 
-
-## Input annualized future projection of demand from year 2021-2030, expressed in unit of MW
-D=1000   # Replace the TESTING NUMBER
-
-## Input capacity factors for solar and wind, assume capacity factor for coal and natural gas is 1.
-Fs=0.3
-Fw=0.4  # we can play with these variables in sensitivity test
-
-## Set Target for Renewable Penetration in 10 years
-rp=0.4
-
-## Power expansion limit i.e. the maximum that can be built for thermal, solar and wind technologies
-PiMax=[400,200,300,400] # Replace the TESTING NUMBER
+CI[3]
 
 
 # In[5]:
 
 
-##### Config Scenarios: Baseline / Public Health #######
 
-# Health care cost $/MWh ##
-CH=0 # CH=0 under baseline scenario
-CH=1 # CH>0 under public health scenario
-
-'''
-I do not distinguish CH for coal and natural gas type, instead, I use a universal CH value. You can distinguish CH values if you like. 
-Please remember to change obj function if you changes the CH setting here...
-'''
+# Set objective
+m1.setObjective(Nh[0]*CG[0]*Pg_c + Nh[1]*CG[1]*Pg_n + Nh[2]*CG[2]*Pg_s + Nh[3]*CG[3]*Pg_w + CI[0]*Pi_c + CI[1]*Pi_n + CI[2]*Pi_s + CI[3]*Pi_w + CH[0]*Nh[0]*Pg_c+ CH[1]*Nh[1]*Pg_n, GRB.MINIMIZE)
 
 
 # In[6]:
 
 
-# Create decision variables representing power generation & capacity expansions:  
-# technologies: coal, natural gas, wind and solar
-Pg_c = m.addVar(vtype=GRB.CONTINUOUS, name="Pg_c"); 
-Pg_n = m.addVar(vtype=GRB.CONTINUOUS, name="Pg_n"); 
-Pg_s = m.addVar(vtype=GRB.CONTINUOUS, name="Pg_s");
-Pg_w = m.addVar(vtype=GRB.CONTINUOUS, name="Pg_w");
-Pi_c = m.addVar(vtype=GRB.CONTINUOUS, name="Pi_c"); 
-Pi_n = m.addVar(vtype=GRB.CONTINUOUS, name="Pi_n"); 
-Pi_s = m.addVar(vtype=GRB.CONTINUOUS, name="Pi_s");
-Pi_w = m.addVar(vtype=GRB.CONTINUOUS, name="Pi_w");
+# Add constraints for Baseline:
+m1.addConstr(Pg_c + Pg_n + Pg_s + Pg_w >= D, "c0")  # Power balance constraint
+
+m1.addConstr(Pg_c <= PF[0]*(Pi_c+Pi_0[0]), "c1")    # power output lower and upper limits
+m1.addConstr(Pg_n <= PF[1]*(Pi_n+Pi_0[1]), "c2")
+m1.addConstr(Pg_s <= PF[2]*(Pi_s+Pi_0[2]), "c3")
+m1.addConstr(Pg_w <= PF[3]*(Pi_w+Pi_0[3]), "c4")
+m1.addConstr(Pg_c >= 0, "c5")
+m1.addConstr(Pg_n >= 0, "c6")
+m1.addConstr(Pg_s >= 0, "c7")
+m1.addConstr(Pg_w >= 0, "c8")
+
+m1.addConstr(Nh[2]*Pg_s + Nh[3]*Pg_w >= rp*Dh, "c9")  # renewable penetration target constraint 
+
+m1.addConstr(Pi_c <= PiMax[0], "c10")  # limit of the maximum buildout for each generation technology
+m1.addConstr(Pi_n <= PiMax[0], "c11")
+m1.addConstr(Pi_s <= PiMax[1], "c12") 
+m1.addConstr(Pi_w <= PiMax[2], "c13") 
 
 
 # In[7]:
 
 
-# Set objective
-
-m.setObjective(Nh[0]*Pg_c + Nh[1]*Pg_n + Nh[2]*Pg_s + Nh[3]*Pg_w + CI[0]*Pi_c + CI[1]*Pi_n + CI[2]*Pi_s + CI[3]*Pi_w + CH*(Nh[0]*Pg_c+ Nh[1]*Pg_n), GRB.MINIMIZE)
+# Optimize
+m1.optimize()
 
 
 # In[8]:
 
 
-# Add constraints:
-m.addConstr(Pg_c + Pg_n + Pg_s + Pg_w >= D, "c0")  # Power balance constraint
+# printout decision variable values for Baseline Model
+m1.getVars()
+for v in m1.getVars(): print(v.varName, v.x)
+# printout objective values
+print('Obj under Baseline: %g' % m1.objVal)
 
-m.addConstr(Pg_c <= Pi_c, "c1")    # power output lower and upper limits
-m.addConstr(Pg_n <= Pi_n, "c2")
-m.addConstr(Pg_s <= Pi_s, "c3")
-m.addConstr(Pg_w <= Pi_w, "c4")
-m.addConstr(Pg_c >= 0, "c5")
-m.addConstr(Pg_n >= 0, "c6")
-m.addConstr(Pg_s >= 0, "c7")
-m.addConstr(Pg_w >= 0, "c8")
 
-m.addConstr(Nh[0]*Pg_c + Nh[1]*Pg_n + Nh[2]*Pg_s + Nh[3]*Pg_w >= rp*D, "c9")  # renewable penetration target constraint 
-
-m.addConstr(Pi_c <= PiMax[0], "c10")  # limit of the maximum buildout for each generation technology
-m.addConstr(Pi_n <= PiMax[0], "c11")
-m.addConstr(Pi_s <= PiMax[1], "c12") 
-m.addConstr(Pi_w <= PiMax[2], "c13") 
-
+# ### Data Analytics for Baseline Scenario
 
 # In[9]:
-
-
-# Optimize
-m.optimize()
-
-
-# In[10]:
-
-
-# printout decision variable values
-m.getVars()
-for v in m.getVars(): print(v.varName, v.x)
-# printout objective values
-print('Obj: %g' % m.objVal)
-
-
-# ## Data Analytics
-
-# In[14]:
 
 
 import matplotlib.pyplot as plt
 # Pie chart of generation mix, where the slices will be ordered and plotted counter-clockwise:
 
-Pg_c_star=m.getVars()[0].x
-Pg_n_star=m.getVars()[1].x
-Pg_s_star=m.getVars()[2].x
-Pg_w_star=m.getVars()[3].x
-Pi_c_star=m.getVars()[4].x
-Pi_n_star=m.getVars()[5].x
-Pi_s_star=m.getVars()[6].x
-Pi_w_star=m.getVars()[7].x
+Pg_c_star1=m1.getVars()[0].x
+Pg_n_star1=m1.getVars()[1].x
+Pg_s_star1=m1.getVars()[2].x
+Pg_w_star1=m1.getVars()[3].x
+Pi_c_star1=m1.getVars()[4].x
+Pi_n_star1=m1.getVars()[5].x
+Pi_s_star1=m1.getVars()[6].x
+Pi_w_star1=m1.getVars()[7].x
 
-labels = 'Coal', 'Natural Gas', 'Solar', 'Wind'
-genMix = [Pg_c_star, Pg_n_star, Pg_s_star, Pg_w_star]
-expCap = [Pi_c_star, Pi_n_star, Pi_s_star, Pi_w_star]
-sizes = [25, 25, 25, 25] ## just using pseudo sizes matrix for pie chart demo, need to replace it with genMix
+
+labels = 'Coal', 'NG', 'Solar', 'Wind'
+genMix_B = [Pg_c_star1, Pg_n_star1, Pg_s_star1, Pg_w_star1]
+
+
+expCap_B = [Pi_c_star1, Pi_n_star1, Pi_s_star1, Pi_w_star1]
+
+
 explode = (0, 0, 0.1, 0)  # only "explode" the 2nd slice (i.e. 'Solar')
 
-fig1, (ax1,ax2) = plt.subplots(1,2)
-ax1.pie(genMix, explode=explode, labels=labels, autopct='%1.1f%%',
+fig1, (ax1,ax2) = plt.subplots(1,2,figsize=(10,10))
+
+ax1.pie(genMix_B, explode=explode, labels=labels, autopct='%1.1f%%',
         shadow=True, startangle=90)
 ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-ax1.set_title("Optimal Generation Mix \nin next 10 years")
+ax1.set_title("Optimal Generation Mix \nin next 10 years, Baseline")
 
-ax2.pie(expCap, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+ax2.pie(expCap_B, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
 ax2.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-ax2.set_title("Optimal Capacity Expansion \nin next 10 years")
+ax2.set_title("Optimal Capacity Expansion \nin next 10 years, Baseline")
+
 plt.show()
+
+
+# ### Scenario Analysis
+
+# In[10]:
+
+
+# implement public health sceanrio
+m2 = Model("Public Health") #Public Health scenario
+Pg_c = m2.addVar(vtype=GRB.CONTINUOUS, name="Pg_c"); 
+Pg_n = m2.addVar(vtype=GRB.CONTINUOUS, name="Pg_n"); 
+Pg_s = m2.addVar(vtype=GRB.CONTINUOUS, name="Pg_s");
+Pg_w = m2.addVar(vtype=GRB.CONTINUOUS, name="Pg_w");
+Pi_c = m2.addVar(vtype=GRB.CONTINUOUS, name="Pi_c"); 
+Pi_n = m2.addVar(vtype=GRB.CONTINUOUS, name="Pi_n"); 
+Pi_s = m2.addVar(vtype=GRB.CONTINUOUS, name="Pi_s");
+Pi_w = m2.addVar(vtype=GRB.CONTINUOUS, name="Pi_w");
+m2.setObjective(Nh[0]*Pg_c*CG[0] + Nh[1]*Pg_n*CG[1] + Nh[2]*Pg_s*CG[2] + Nh[3]*Pg_w*CG[3] + CI[0]*Pi_c + CI[1]*Pi_n + CI[2]*Pi_s + CI[3]*Pi_w + CH_ph[0]*Nh[0]*Pg_c+ CH_ph[1]*Nh[1]*Pg_n, GRB.MINIMIZE)
+# Add constraints for PH scenario
+m2.addConstr(Pg_c + Pg_n + Pg_s + Pg_w >= D, "c0")  # Power balance constraint
+
+m2.addConstr(Pg_c <= PF[0]*(Pi_c+Pi_0[0]), "c1")    # power output lower and upper limits
+m2.addConstr(Pg_n <= PF[1]*(Pi_n+Pi_0[1]), "c2")
+m2.addConstr(Pg_s <= PF[2]*(Pi_s+Pi_0[2]), "c3")
+m2.addConstr(Pg_w <= PF[3]*(Pi_w+Pi_0[3]), "c4")
+m2.addConstr(Pg_c >= 0, "c5")
+m2.addConstr(Pg_n >= 0, "c6")
+m2.addConstr(Pg_s >= 0, "c7")
+m2.addConstr(Pg_w >= 0, "c8")
+
+m2.addConstr(Nh[2]*Pg_s + Nh[3]*Pg_w >= rp*Dh, "c9")  # renewable penetration target constraint 
+
+m2.addConstr(Pi_c <= PiMax[0], "c10")  # limit of the maximum buildout for each generation technology
+m2.addConstr(Pi_n <= PiMax[0], "c11")
+m2.addConstr(Pi_s <= PiMax[1], "c12") 
+m2.addConstr(Pi_w <= PiMax[2], "c13") 
+m2.optimize()
+
+
+# In[11]:
+
+
+m2.getVars()
+for v in m2.getVars(): print(v.varName, v.x)
+# printout objective values
+print('Obj under Public Health Scenario: %g' % m2.objVal)
+
+
+# In[12]:
+
+
+Pg_c_star2=m2.getVars()[0].x
+Pg_n_star2=m2.getVars()[1].x
+Pg_s_star2=m2.getVars()[2].x
+Pg_w_star2=m2.getVars()[3].x
+Pi_c_star2=m2.getVars()[4].x
+Pi_n_star2=m2.getVars()[5].x
+Pi_s_star2=m2.getVars()[6].x
+Pi_w_star2=m2.getVars()[7].x
+
+
+genMix_PH = [Pg_c_star2, Pg_n_star2, Pg_s_star2, Pg_w_star2]
+expCap_PH = [Pi_c_star2, Pi_n_star2, Pi_s_star2, Pi_w_star2]
+
+
+fig2, axs= plt.subplots(2,2,figsize=(10,10))
+
+axs[0,0].pie(genMix_B, explode=explode, labels=labels, autopct='%1.1f%%',
+        shadow=True, startangle=90)
+axs[0,0].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+axs[0,0].set_title("Optimal Generation Mix \nin next 10 years, Baseline")
+
+axs[1,0].pie(expCap_B, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+axs[1,0].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+axs[1,0].set_title("Optimal Capacity Expansion \nin next 10 years, Baseline")
+
+axs[0,1].pie(genMix_PH, explode=explode, labels=labels, autopct='%1.1f%%',
+        shadow=True, startangle=90)
+axs[0,1].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+axs[0,1].set_title("Optimal Generation Mix \nin next 10 years, Public Health")
+
+axs[1,1].pie(expCap_PH, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+axs[1,1].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+axs[1,1].set_title("Optimal Capacity Expansion \nin next 10 years, Public Health")
+plt.show()
+
+
+# ### Sensitivity Analysis
+
+# In[13]:
+
+
+### implement sensivitity analysis regarding change in costs variables
+
+m1.reset()
+## Input generation cost by coal, natural gas, solar and wind， split thermal to coal and natural gas
+FUELc  = 17  # $/MWh
+FUELng = 18  # $/MWh avg combined cycle 
+
+VOMc  = 4  # $/MWh
+VOMng = 1  # $/MWh
+VOMw  = 100  # $/MWh
+VOMs  = 0  # $/MWh
+
+CGc  = FUELc  + VOMc   # $/MWh
+CGng = FUELng + VOMng  # $/MWh
+CGw  = VOMw            # $/MWh
+CGs  = VOMs            # $/MWh
+
+CG = [CGc, CGng, CGs, CGw] # $/MWh
+
+### Input investment cost by coal, natural gas, solar and wind
+
+# CAPEX	= ConFinFActor * (OCC * CapRegMult + GCC)
+CAPEXc  = 500  # $/kW Coal-new-AvgCF
+#CAPEXc  = 4150  # $/kW Coal-new-HighCF
+CAPEXng = 900  # $/kW Gas CC AvgCF
+#CAPEXng = 1088  # $/kW Gas CC HighCF
+CAPEXs  = 1600 # $/kW LA
+CAPEXw  = 1926 # $/kW Class 7
+
+
+# Fixed Operating Expenses	FOM = input in $/kW
+FOMc  = 40 # $/kW - year
+FOMng = 13 # $/kW-year Gas-CC-AvgCF
+#FOMng = 13 # $/kW-year Gas-CC-HighCF
+FOMw  = 43 # $/kW - year
+FOMs  = 19 # $/kW - year
+
+CIc  = (CAPEXc  + num_years*FOMc)  * (1000)  # $/MW
+CIng = (CAPEXng + num_years*FOMng) * (1000)  # $/MW
+CIs  = (CAPEXs  + num_years*FOMs)  * (1000)  # $/MW
+CIw  = (CAPEXw  + num_years*FOMw)  * (1000)  # $/MW
+
+CI = [CIc, CIng, CIs, CIw] # $/MW
+
+Pg_c = m1.addVar(vtype=GRB.CONTINUOUS, name="Pg_c"); 
+Pg_n = m1.addVar(vtype=GRB.CONTINUOUS, name="Pg_n"); 
+Pg_s = m1.addVar(vtype=GRB.CONTINUOUS, name="Pg_s");
+Pg_w = m1.addVar(vtype=GRB.CONTINUOUS, name="Pg_w");
+Pi_c = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_c"); 
+Pi_n = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_n"); 
+Pi_s = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_s");
+Pi_w = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_w");
+
+m1.setObjective(Nh[0]*Pg_c*CG[0] + Nh[1]*Pg_n*CG[1] + Nh[2]*Pg_s*CG[2] + Nh[3]*Pg_w*CG[3] + CI[0]*Pi_c + CI[1]*Pi_n + CI[2]*Pi_s + CI[3]*Pi_w + CH[0]*Nh[0]*Pg_c+ CH[1]*Nh[1]*Pg_n, GRB.MINIMIZE)
+
+m1.addConstr(Pg_c + Pg_n + Pg_s + Pg_w >= D, "c0")  # Power balance constraint
+
+m1.addConstr(Pg_c <= PF[0]*(Pi_c+Pi_0[0]), "c1")    # power output lower and upper limits
+m1.addConstr(Pg_n <= PF[1]*(Pi_n+Pi_0[1]), "c2")
+m1.addConstr(Pg_s <= PF[2]*(Pi_s+Pi_0[2]), "c3")
+m1.addConstr(Pg_w <= PF[3]*(Pi_w+Pi_0[3]), "c4")
+m1.addConstr(Pg_c >= 0, "c5")
+m1.addConstr(Pg_n >= 0, "c6")
+m1.addConstr(Pg_s >= 0, "c7")
+m1.addConstr(Pg_w >= 0, "c8")
+
+
+
+m1.addConstr(Nh[2]*Pg_s + Nh[3]*Pg_w >= rp*Dh, "c9")  # renewable penetration target constraint 
+
+m1.addConstr(Pi_c <= PiMax[0], "c10")  # limit of the maximum buildout for each generation technology
+m1.addConstr(Pi_n <= PiMax[0], "c11")
+m1.addConstr(Pi_s <= PiMax[1], "c12") 
+m1.addConstr(Pi_w <= PiMax[2], "c13")
+
+
+# example of how to reset objective function 
+m1.setParam("Pi_g",2000) #the coeff/cost of devision variable Pi_w is 2356000, now changes to 2000
+m1.optimize()
+
+
+# In[14]:
+
+
+m1.getVars()
+for v in m1.getVars(): print(v.varName, v.x)
+# printout objective values
+print('Obj under Baseline: %g' % m1.objVal)
+
+
+# In[15]:
+
+
+Pg_c_star3=m1.getVars()[0].x
+Pg_n_star3=m1.getVars()[1].x
+Pg_s_star3=m1.getVars()[2].x
+Pg_w_star3=m1.getVars()[3].x
+Pi_c_star3=m1.getVars()[4].x
+Pi_n_star3=m1.getVars()[5].x
+Pi_s_star3=m1.getVars()[6].x
+Pi_w_star3=m1.getVars()[7].x
+    
+genMix_C = [Pg_c_star3, Pg_n_star3, Pg_s_star3, Pg_w_star3]
+expCap_C = [Pi_c_star3, Pi_n_star3, Pi_s_star3, Pi_w_star3]
+
+
+# In[20]:
+
+
+fig3, axs = plt.subplots(2,2,figsize=(10,10))
+fig3.suptitle("Optimal Gen Mix Sensitivity Analysis to Costs")
+axs[0,0].pie(genMix_C, explode=explode, labels=labels, autopct='%1.1f%%',
+        shadow=True, startangle=90)
+axs[0,0].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+axs[0,0].set_title("Optimal Generation Mix \nin next 10 years")
+
+axs[1,0].pie(expCap_C, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+axs[1,0].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+axs[1,0].set_title("Optimal Capacity Expansion \nin next 10 years")
+
+axs[0,1].pie(genMix_B, explode=explode, labels=labels, autopct='%1.1f%%',
+        shadow=True, startangle=90)
+axs[0,1].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+axs[0,1].set_title("Optimal Generation Mix \nin next 10 years, Baseline")
+
+axs[1,1].pie(expCap_B, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+axs[1,1].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+axs[1,1].set_title("Optimal Capacity Expansion \nin next 10 years, Baseline")
+plt.show()
+
+
+# In[ ]:
+
+
+
+
