@@ -125,8 +125,8 @@ CH   = [0, 0] # CH=0 under baseline scenario
 
 # CHc  = 0.45 * (10^-3)# $/MWh
 # CHng = 0.02 * (10^-3) # $/MWh  these costs are too small compared to costs of renewables
-CHc  = 0.45*(1000)# $/MWh
-CHng = 0.02*(1000) # $/MWh  
+CHc  = 0.45*(10000)# $/MWh
+CHng = 0.02*(10000) # $/MWh  
 
 CH_ph = [CHc, CHng] # CH>0 under public health scenario
 
