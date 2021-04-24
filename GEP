@@ -71,12 +71,12 @@ Nhng = 4818 # Gas-CC-AvgCF
 Nhw  = 3023 # Class 7 Wind
 Nhs  = 2793 # Utility PV - LA
 Nh = [Nhc, Nhng, Nhs, Nhw] # ATB table data 
-Nh = [8760,8760,5694,4380] 
+Nh = [8760,8760,5694,5694] 
 
 ## Input annualized future projection of demand from year 2021-2030, expressed in unit of MW
 # “Adopted 2019 Integrated Energy Policy Report,” n.d., 412.
-D = 221300 # MW   CEDU 2018 mid - 2030 
-Dh = 2814588*1000 #MWh # 321300*8760
+D = 50000 # MW  https://www.caiso.com/Documents/2020SummerLoadsandResourcesAssessment.pdf
+Dh = 438000000  #MWh # D*8760=265707*8760
 #D_2020 = 280000 #GWh
 
 ## Input capacity factors for solar and wind, assume capacity factor for coal and natural gas is 1.
@@ -93,23 +93,29 @@ PF=[Fc,Fng ,Fs,Fw]
 #we can play with these variables in sensitivity test
 
 ## Set Target for Renewable Penetration in 10 years
-rp=0.2
+rp=0.4
 
 ## Power expansion limit i.e. the maximum that can be built for thermal, solar and wind technologies
-PiMax_Potential=np.array([80000,122271,452556,97703]) # Replace the TESTING NUMBER
+PiMax_Potential=np.array([50000,50000,452556,20000]) # Replace the TESTING NUMBER
+
+#PiMax_Potential=np.array([100000,1000000,45255600,20000000]) # Replace the TESTING NUMBER
 
 ### Currently you can see genB and gen are the same this is because we start from grey field (i.e. assume all generation capacity built=0)
 ### Please put currenty (2021) generation capacity already built for coal, natural gas, solar, wind
-IniPi_c = 60000
-IniPi_ng = 60000    ## THIS IS FAKE
-IniPi_w = 20000
-IniPi_s = 20000
-Pi_0=np.array([IniPi_c,IniPi_ng,IniPi_w,IniPi_s])
-PiMax=PiMax_Potential-Pi_0
+IniPi_c = 480   
+IniPi_ng = 30703    #34118-480-2935  ## https://www.cpuc.ca.gov/uploadedFiles/CPUCWebsite/Content/UtilitiesIndustries/Energy/EnergyPrograms/ElectPowerProcurementGeneration/irp/2018/Prelim_Results_Proposed_Inputs_and_Assumptions_2019-2020_10-4-19.pdf
+IniPi_s = 14272
+IniPi_w = 8549
+
+Pi_0=np.array([IniPi_c,IniPi_ng,IniPi_s,IniPi_w])
+PiMax=(PiMax_Potential-Pi_0).tolist()
 
 PI_0=Pi_0.tolist()
 
-(sum(PiMax)+sum(PI_0))>D
+(PiMax[0]+IniPi_c)*Fc+(PiMax[1]+IniPi_ng)*Fng+(PiMax[2]+IniPi_s)*Fs+(PiMax[3]+IniPi_w)*Fw>D
+
+#Nh[2]*(PiMax[2]+IniPi_s)*Fs+Nh[3]*(PiMax[3]+IniPi_w)*Fw>Dh*0.4
+#PiMax
 
 
 # ![image.png](attachment:image.png)
@@ -125,8 +131,8 @@ CH   = [0, 0] # CH=0 under baseline scenario
 
 # CHc  = 0.45 * (10^-3)# $/MWh
 # CHng = 0.02 * (10^-3) # $/MWh  these costs are too small compared to costs of renewables
-CHc  = 0.45*(10000)# $/MWh
-CHng = 0.02*(10000) # $/MWh  
+CHc  = 0.45*(100000)# $/MWh
+CHng = 0.02*(100000) # $/MWh  
 
 CH_ph = [CHc, CHng] # CH>0 under public health scenario
 
@@ -145,8 +151,10 @@ Pi_c = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_c");
 Pi_n = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_n"); 
 Pi_s = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_s");
 Pi_w = m1.addVar(vtype=GRB.CONTINUOUS, name="Pi_w");
-
-CI[3]
+Nh_c=  m1.addVar(vtype=GRB.CONTINUOUS, name="Nh_c"); 
+Nh_n = m1.addVar(vtype=GRB.CONTINUOUS, name="Nh_n"); 
+Nh_s = m1.addVar(vtype=GRB.CONTINUOUS, name="Nh_s");
+Nh_w = m1.addVar(vtype=GRB.CONTINUOUS, name="Nh_w");
 
 
 # In[5]:
@@ -155,6 +163,7 @@ CI[3]
 
 # Set objective
 m1.setObjective(Nh[0]*CG[0]*Pg_c + Nh[1]*CG[1]*Pg_n + Nh[2]*CG[2]*Pg_s + Nh[3]*CG[3]*Pg_w + CI[0]*Pi_c + CI[1]*Pi_n + CI[2]*Pi_s + CI[3]*Pi_w + CH[0]*Nh[0]*Pg_c+ CH[1]*Nh[1]*Pg_n, GRB.MINIMIZE)
+#m1.setObjective(Nh_c*CG[0]*Pg_c + Nh_n*CG[1]*Pg_n + Nh_s*CG[2]*Pg_s + Nh_w*CG[3]*Pg_w + CI[0]*Pi_c + CI[1]*Pi_n + CI[2]*Pi_s + CI[3]*Pi_w + CH[0]*Nh_c*Pg_c+ CH[1]*Nh_n*Pg_n, GRB.MINIMIZE)
 
 
 # In[6]:
@@ -163,10 +172,10 @@ m1.setObjective(Nh[0]*CG[0]*Pg_c + Nh[1]*CG[1]*Pg_n + Nh[2]*CG[2]*Pg_s + Nh[3]*C
 # Add constraints for Baseline:
 m1.addConstr(Pg_c + Pg_n + Pg_s + Pg_w >= D, "c0")  # Power balance constraint
 
-m1.addConstr(Pg_c <= PF[0]*(Pi_c+Pi_0[0]), "c1")    # power output lower and upper limits
-m1.addConstr(Pg_n <= PF[1]*(Pi_n+Pi_0[1]), "c2")
-m1.addConstr(Pg_s <= PF[2]*(Pi_s+Pi_0[2]), "c3")
-m1.addConstr(Pg_w <= PF[3]*(Pi_w+Pi_0[3]), "c4")
+m1.addConstr(Pg_c <= PF[0]*(Pi_c+PI_0[0]), "c1")    # power output lower and upper limits
+m1.addConstr(Pg_n <= PF[1]*(Pi_n+PI_0[1]), "c2")
+m1.addConstr(Pg_s <= PF[2]*(Pi_s+PI_0[2]), "c3")
+m1.addConstr(Pg_w <= PF[3]*(Pi_w+PI_0[3]), "c4")
 m1.addConstr(Pg_c >= 0, "c5")
 m1.addConstr(Pg_n >= 0, "c6")
 m1.addConstr(Pg_s >= 0, "c7")
@@ -175,9 +184,21 @@ m1.addConstr(Pg_w >= 0, "c8")
 m1.addConstr(Nh[2]*Pg_s + Nh[3]*Pg_w >= rp*Dh, "c9")  # renewable penetration target constraint 
 
 m1.addConstr(Pi_c <= PiMax[0], "c10")  # limit of the maximum buildout for each generation technology
-m1.addConstr(Pi_n <= PiMax[0], "c11")
-m1.addConstr(Pi_s <= PiMax[1], "c12") 
-m1.addConstr(Pi_w <= PiMax[2], "c13") 
+m1.addConstr(Pi_n <= PiMax[1], "c11")
+m1.addConstr(Pi_s <= PiMax[2], "c12") 
+m1.addConstr(Pi_w <= PiMax[3], "c13") 
+
+# m1.addConstr(Nh_c >= 0,"c14")
+# m1.addConstr(Nh_n >= 0,"c15")
+# m1.addConstr(Nh_s >= 0,"c16")
+# m1.addConstr(Nh_w >= 0,"c17")
+
+# m1.addConstr(Nh_c <= Nh[0],"c14")
+# m1.addConstr(Nh_n <= Nh[1],"c15")
+# m1.addConstr(Nh_s <= Nh[2],"c16")
+# m1.addConstr(Nh_w <= Nh[3],"c17")
+
+# m1.addConstr(Nh_c+Nh_n+Nh_s+Nh_w==8760,"c18")
 
 
 # In[7]:
@@ -205,6 +226,9 @@ print('Obj under Baseline: %g' % m1.objVal)
 import matplotlib.pyplot as plt
 # Pie chart of generation mix, where the slices will be ordered and plotted counter-clockwise:
 
+import matplotlib as mpl
+mpl.rcParams['font.size'] = 16
+
 Pg_c_star1=m1.getVars()[0].x
 Pg_n_star1=m1.getVars()[1].x
 Pg_s_star1=m1.getVars()[2].x
@@ -222,9 +246,9 @@ genMix_B = [Pg_c_star1, Pg_n_star1, Pg_s_star1, Pg_w_star1]
 expCap_B = [Pi_c_star1, Pi_n_star1, Pi_s_star1, Pi_w_star1]
 
 
-explode = (0, 0, 0.1, 0)  # only "explode" the 2nd slice (i.e. 'Solar')
+explode = (0, 0, 0.1, 0.1)  # only "explode" the 2nd slice (i.e. 'Solar')
 
-fig1, (ax1,ax2) = plt.subplots(1,2,figsize=(10,10))
+fig1, (ax1,ax2) = plt.subplots(1,2,figsize=(20,10))
 
 ax1.pie(genMix_B, explode=explode, labels=labels, autopct='%1.1f%%',
         shadow=True, startangle=90)
@@ -254,7 +278,8 @@ Pi_n = m2.addVar(vtype=GRB.CONTINUOUS, name="Pi_n");
 Pi_s = m2.addVar(vtype=GRB.CONTINUOUS, name="Pi_s");
 Pi_w = m2.addVar(vtype=GRB.CONTINUOUS, name="Pi_w");
 m2.setObjective(Nh[0]*Pg_c*CG[0] + Nh[1]*Pg_n*CG[1] + Nh[2]*Pg_s*CG[2] + Nh[3]*Pg_w*CG[3] + CI[0]*Pi_c + CI[1]*Pi_n + CI[2]*Pi_s + CI[3]*Pi_w + CH_ph[0]*Nh[0]*Pg_c+ CH_ph[1]*Nh[1]*Pg_n, GRB.MINIMIZE)
-# Add constraints for PH scenario
+
+#Add constraints for PH scenario
 m2.addConstr(Pg_c + Pg_n + Pg_s + Pg_w >= D, "c0")  # Power balance constraint
 
 m2.addConstr(Pg_c <= PF[0]*(Pi_c+Pi_0[0]), "c1")    # power output lower and upper limits
@@ -269,9 +294,9 @@ m2.addConstr(Pg_w >= 0, "c8")
 m2.addConstr(Nh[2]*Pg_s + Nh[3]*Pg_w >= rp*Dh, "c9")  # renewable penetration target constraint 
 
 m2.addConstr(Pi_c <= PiMax[0], "c10")  # limit of the maximum buildout for each generation technology
-m2.addConstr(Pi_n <= PiMax[0], "c11")
-m2.addConstr(Pi_s <= PiMax[1], "c12") 
-m2.addConstr(Pi_w <= PiMax[2], "c13") 
+m2.addConstr(Pi_n <= PiMax[1], "c11")
+m2.addConstr(Pi_s <= PiMax[2], "c12") 
+m2.addConstr(Pi_w <= PiMax[3], "c13") 
 m2.optimize()
 
 
@@ -301,7 +326,8 @@ genMix_PH = [Pg_c_star2, Pg_n_star2, Pg_s_star2, Pg_w_star2]
 expCap_PH = [Pi_c_star2, Pi_n_star2, Pi_s_star2, Pi_w_star2]
 
 
-fig2, axs= plt.subplots(2,2,figsize=(10,10))
+
+fig2, axs= plt.subplots(2,2,figsize=(16,16))
 
 axs[0,0].pie(genMix_B, explode=explode, labels=labels, autopct='%1.1f%%',
         shadow=True, startangle=90)
@@ -316,11 +342,20 @@ axs[0,1].pie(genMix_PH, explode=explode, labels=labels, autopct='%1.1f%%',
         shadow=True, startangle=90)
 axs[0,1].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
 axs[0,1].set_title("Optimal Generation Mix \nin next 10 years, Public Health")
+colors=[1,2,3,4]
+# axs[1,1].pie((Pi_n_star2, Pi_s_star2, Pi_w_star2), explode=(0, 0.1, 0.1), labels = ('NG', 'Solar', 'Wind'), colors=('blue','yellow','red'), autopct='%10.1f%%', shadow=True, startangle=90)
+# axs[1,1].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+# axs[1,1].set_title("Optimal Capacity Expansion \nin next 10 years, Public Health")
 
-axs[1,1].pie(expCap_PH, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
+axs[1,1].pie(expCap_PH, explode=explode, labels = labels, autopct='%1.1f%%', shadow=True, startangle=90)
 axs[1,1].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
 axs[1,1].set_title("Optimal Capacity Expansion \nin next 10 years, Public Health")
+
+
+from matplotlib import rcParams
+rcParams['axes.titlepad'] = 20
 plt.show()
+
 
 
 # ### Sensitivity Analysis
@@ -399,13 +434,12 @@ m1.addConstr(Pg_w >= 0, "c8")
 m1.addConstr(Nh[2]*Pg_s + Nh[3]*Pg_w >= rp*Dh, "c9")  # renewable penetration target constraint 
 
 m1.addConstr(Pi_c <= PiMax[0], "c10")  # limit of the maximum buildout for each generation technology
-m1.addConstr(Pi_n <= PiMax[0], "c11")
-m1.addConstr(Pi_s <= PiMax[1], "c12") 
-m1.addConstr(Pi_w <= PiMax[2], "c13")
+m1.addConstr(Pi_n <= PiMax[1], "c11")
+m1.addConstr(Pi_s <= PiMax[2], "c12") 
+m1.addConstr(Pi_w <= PiMax[3], "c13")
 
 
-# example of how to reset objective function 
-m1.setParam("Pi_g",2000) #the coeff/cost of devision variable Pi_w is 2356000, now changes to 2000
+m1.reset()
 m1.optimize()
 
 
@@ -434,10 +468,10 @@ genMix_C = [Pg_c_star3, Pg_n_star3, Pg_s_star3, Pg_w_star3]
 expCap_C = [Pi_c_star3, Pi_n_star3, Pi_s_star3, Pi_w_star3]
 
 
-# In[20]:
+# In[16]:
 
 
-fig3, axs = plt.subplots(2,2,figsize=(10,10))
+fig3, axs = plt.subplots(2,2,figsize=(16,16))
 fig3.suptitle("Optimal Gen Mix Sensitivity Analysis to Costs")
 axs[0,0].pie(genMix_C, explode=explode, labels=labels, autopct='%1.1f%%',
         shadow=True, startangle=90)
@@ -456,7 +490,22 @@ axs[0,1].set_title("Optimal Generation Mix \nin next 10 years, Baseline")
 axs[1,1].pie(expCap_B, explode=explode, labels=labels, autopct='%1.1f%%', shadow=True, startangle=90)
 axs[1,1].axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
 axs[1,1].set_title("Optimal Capacity Expansion \nin next 10 years, Baseline")
+
+ 
+rcParams['axes.titlepad'] = 20
 plt.show()
+
+
+# In[17]:
+
+
+CH
+
+
+# In[ ]:
+
+
+
 
 
 # In[ ]:
